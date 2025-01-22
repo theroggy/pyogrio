@@ -295,9 +295,10 @@ def test_read_datetime(datetime_file, use_arrow):
         assert df.col.dtype.name == "datetime64[ns]"
 
 
+@pytest.mark.parametrize("ext", [ext for ext in ALL_EXTS if ext not in ".shp"])
 @pytest.mark.filterwarnings("ignore: Non-conformant content for record 1 in column ")
 @pytest.mark.requires_arrow_write_api
-def test_read_datetime_tz(datetime_tz_file, tmp_path, use_arrow):
+def test_read_datetime_tz(datetime_tz_file, tmp_path, ext, use_arrow):
     df = read_dataframe(datetime_tz_file)
     # Make the index non-consecutive to test this case as well. Added for issue
     # https://github.com/geopandas/pyogrio/issues/324
@@ -311,7 +312,7 @@ def test_read_datetime_tz(datetime_tz_file, tmp_path, use_arrow):
     expected = pd.Series(expected, name="datetime_col")
     assert_series_equal(df.datetime_col, expected, check_index=False)
     # test write and read round trips
-    fpath = tmp_path / "test.gpkg"
+    fpath = tmp_path / f"test{ext}"
     write_dataframe(df, fpath, use_arrow=use_arrow)
     df_read = read_dataframe(fpath, use_arrow=use_arrow)
     if use_arrow:
@@ -320,11 +321,12 @@ def test_read_datetime_tz(datetime_tz_file, tmp_path, use_arrow):
     assert_series_equal(df_read.datetime_col, expected)
 
 
+@pytest.mark.parametrize("ext", [ext for ext in ALL_EXTS if ext not in ".shp"])
 @pytest.mark.filterwarnings(
     "ignore: Non-conformant content for record 1 in column dates"
 )
 @pytest.mark.requires_arrow_write_api
-def test_write_datetime_mixed_offset(tmp_path, use_arrow):
+def test_write_datetime_mixed_offset(tmp_path, ext, use_arrow):
     # Australian Summer Time AEDT (GMT+11), Standard Time AEST (GMT+10)
     dates = ["2023-01-01 11:00:01.111", "2023-06-01 10:00:01.111"]
     naive_col = pd.Series(pd.to_datetime(dates), name="dates")
@@ -337,7 +339,7 @@ def test_write_datetime_mixed_offset(tmp_path, use_arrow):
         {"dates": localised_col, "geometry": [Point(1, 1), Point(1, 1)]},
         crs="EPSG:4326",
     )
-    fpath = tmp_path / "test.gpkg"
+    fpath = tmp_path / f"test_datetime{ext}"
     write_dataframe(df, fpath, use_arrow=use_arrow)
     result = read_dataframe(fpath, use_arrow=use_arrow)
     # GDAL tz only encodes offsets, not timezones
