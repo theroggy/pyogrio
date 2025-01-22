@@ -435,12 +435,12 @@ def test_write_read_datetime_utc(tmp_path, ext, use_arrow):
     write_dataframe(df, fpath, use_arrow=use_arrow)
     result = read_dataframe(fpath, use_arrow=use_arrow)
 
-    if use_arrow and ext == ".fgb" and __gdal_version__ < (3, 11, 0):
+    if use_arrow and ext == ".fgb":  # and __gdal_version__ < (3, 11, 0):
         # With GDAL < 3.11 with arrow, timezone information is dropped when reading .fgb
         assert_series_equal(result.dates, df.dates.dt.tz_localize(None))
         pytest.xfail("UTC datetimes read wrong in .fgb with GDAL < 3.11 via arrow")
 
-    assert isinstance(result.dates.dtype, pd.DatetimeTZDtype)
+    assert str(result.dates.dtype) == "datetime64[ms, UTC]"
     assert_geodataframe_equal(result, df)
 
 
