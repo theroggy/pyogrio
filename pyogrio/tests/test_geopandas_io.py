@@ -328,11 +328,12 @@ def test_read_datetime_tz(datetime_tz_file, tmp_path, ext, use_arrow):
     "ignore: Non-conformant content for record 1 in column dates"
 )
 @pytest.mark.requires_arrow_write_api
-def test_write_read_datetime_mixed_offset(tmp_path, ext, use_arrow):
+@pytest.mark.parametrize("local", ["Australia/Sydney", "UTC", "CET"])
+def test_write_read_datetime_mixed_offset(tmp_path, ext, local, use_arrow):
     # Australian Summer Time AEDT (GMT+11), Standard Time AEST (GMT+10)
     dates = ["2023-01-01 11:00:01.111", "2023-06-01 10:00:01.111"]
     naive_col = pd.Series(pd.to_datetime(dates), name="dates")
-    localised_col = naive_col.dt.tz_localize("Australia/Sydney")
+    localised_col = naive_col.dt.tz_localize(local)
     utc_col = localised_col.dt.tz_convert("UTC")
     if PANDAS_GE_20:
         utc_col = utc_col.dt.as_unit("ms")
@@ -344,6 +345,12 @@ def test_write_read_datetime_mixed_offset(tmp_path, ext, use_arrow):
     fpath = tmp_path / f"test_datetime{ext}"
     write_dataframe(df, fpath, use_arrow=use_arrow)
     result = read_dataframe(fpath, use_arrow=use_arrow)
+
+    if use_arrow and ext in (".geojson", ".geojsonl"):
+        # with Arrow, the datetimes are actually written as naive datetimes
+        assert_series_equal(result["dates"], utc_col.dt.tz_localize(None))
+        pytest.xfail("Timezones info is dropped with Arrow")
+
     # GDAL tz only encodes offsets, not timezones
     # check multiple offsets are read as utc datetime instead of string values
     assert_series_equal(result["dates"], utc_col)
