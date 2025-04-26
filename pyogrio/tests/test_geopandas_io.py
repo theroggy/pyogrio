@@ -555,6 +555,13 @@ def test_read_bbox_mask_invalid(naturalearth_lowres, use_arrow):
         )
 
 
+def test_read_gdb_categories_nulls(test_gdb_categories_nulls, use_arrow):
+    # test that null values are read correctly
+    df = read_dataframe(test_gdb_categories_nulls, use_arrow=use_arrow)
+    assert len(df) == 4
+    assert all(df["Field"].isnull())
+
+
 @pytest.mark.parametrize(
     "mask,expected",
     [

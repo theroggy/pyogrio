@@ -186,6 +186,11 @@ def test_gpkg_nulls():
     return _data_dir / "test_gpkg_nulls.gpkg"
 
 
+@pytest.fixture(scope="session")
+def test_gdb_categories_nulls():
+    return _data_dir / "test_gdb_categories_nulls.gdb.zip"
+
+
 @pytest.fixture(scope="function")
 def no_geometry_file(tmp_path):
     # create a GPKG layer that does not include geometry
