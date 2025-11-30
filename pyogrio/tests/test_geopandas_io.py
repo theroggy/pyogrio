@@ -51,7 +51,14 @@ try:
     import geopandas as gp
     import pandas as pd
     from geopandas.array import from_wkt
-    from pandas.api.types import is_datetime64_dtype, is_object_dtype, is_string_dtype
+    from pandas.api.types import (
+        is_bool_dtype,
+        is_datetime64_dtype,
+        is_float_dtype,
+        is_integer_dtype,
+        is_object_dtype,
+        is_string_dtype,
+    )
 
     import shapely  # if geopandas is present, shapely is expected to be present
     from shapely.geometry import Point
@@ -348,13 +355,21 @@ def test_read_layer_invalid(naturalearth_lowres_all_ext, use_arrow):
         read_dataframe(naturalearth_lowres_all_ext, layer="wrong", use_arrow=use_arrow)
 
 
-def test_read_datetime(datetime_file, use_arrow):
-    df = read_dataframe(datetime_file, use_arrow=use_arrow)
-    if PANDAS_GE_20:
-        # starting with pandas 2.0, it preserves the passed datetime resolution
-        assert df.col.dtype.name == "datetime64[ms]"
+@pytest.mark.parametrize("columns", [None, [], ["col"]])
+def test_read_datetime_columns(datetime_file, columns, use_arrow):
+    df = read_dataframe(datetime_file, columns=columns, use_arrow=use_arrow)
+
+    # Check result
+    if columns is None or "col" in columns:
+        assert "col" in df.columns
+        assert is_datetime64_dtype(df.col.dtype)
+        if PANDAS_GE_20:
+            # starting with pandas 2.0, it preserves the passed datetime resolution
+            assert df.col.dtype.name == "datetime64[ms]"
+        else:
+            assert df.col.dtype.name == "datetime64[ns]"
     else:
-        assert df.col.dtype.name == "datetime64[ns]"
+        assert len(df.columns) == 1  # only geometry
 
 
 def test_read_list_types(list_field_values_files, use_arrow):
@@ -477,6 +492,36 @@ def test_read_list_types(list_field_values_files, use_arrow):
     assert result["list_string_with_null"][4] == [""]
 
 
+@pytest.mark.parametrize("columns", [None, [], ["list_int", "list_string"]])
+def test_read_list_types_columns(request, list_field_values_files, use_arrow, columns):
+    """Test reading a geojson file containing fields with lists."""
+    if list_field_values_files.suffix == ".parquet" and not GDAL_HAS_PARQUET_DRIVER:
+        pytest.skip(
+            "Skipping test for parquet as the GDAL Parquet driver is not available"
+        )
+    if (
+        use_arrow
+        and columns
+        and len(columns) == 2
+        and list_field_values_files.suffix == ".parquet"
+    ):
+        # This gives following error, not sure why. Opened an issue for followup:
+        # https://github.com/geopandas/pyogrio/issues/XXX
+        error_msg = (
+            "This fails with 'pyarrow.lib.ArrowInvalid: ArrowArray struct has "
+            "1 children, expected 0 for type extension<geoarrow.wkb>'"
+        )
+        request.node.add_marker(pytest.mark.xfail(reason=error_msg))
+
+    result = read_dataframe(
+        list_field_values_files, use_arrow=use_arrow, columns=columns
+    )
+
+    # Check result
+    exp_columns = 7 if columns is None else len(columns) + 1  # +1 for geometry
+    assert len(result.columns) == exp_columns
+
+
 @pytest.mark.requires_arrow_write_api
 @pytest.mark.skipif(
     not GDAL_HAS_PARQUET_DRIVER, reason="Parquet driver is not available"
@@ -513,6 +558,93 @@ def test_read_list_nested_struct_parquet_file(
     assert result["col_struct"][0] == {"a": 1, "b": 2}
     assert result["col_struct"][1] == {"a": 1, "b": 2}
     assert result["col_struct"][2] == {"a": 1, "b": 2}
+
+
+@pytest.mark.requires_arrow_write_api
+def test_roundtrip_many_data_types_geojson_file(
+    request, tmp_path, many_data_types_geojson_file, use_arrow
+):
+    """Test roundtripping a GeoJSON file containing many data types."""
+
+    def validate_result(df: pd.DataFrame, use_arrow: bool, ignore_mixed_list_col=False):
+        """Function to validate the data of many_data_types_geojson_file.
+
+        Depending on arrow being used or not there are small differences.
+        """
+        assert "int_col" in df.columns
+        assert is_integer_dtype(df["int_col"].dtype)
+        assert df["int_col"].to_list() == [1]
+
+        assert "float_col" in df.columns
+        assert is_float_dtype(df["float_col"].dtype)
+        assert df["float_col"].to_list() == [1.5]
+
+        assert "str_col" in df.columns
+        assert is_string_dtype(df["str_col"].dtype)
+        assert df["str_col"].to_list() == ["string"]
+
+        assert "bool_col" in df.columns
+        assert is_bool_dtype(df["bool_col"].dtype)
+        assert df["bool_col"].to_list() == [True]
+
+        assert "date_col" in df.columns
+        if use_arrow:
+            # Arrow returns dates as datetime.date objects.
+            assert is_object_dtype(df["date_col"].dtype)
+            assert df["date_col"].to_list() == [pd.Timestamp("2020-01-01").date()]
+        else:
+            # Without arrow, date columns are returned as datetime64.
+            assert is_datetime64_dtype(df["date_col"].dtype)
+            assert df["date_col"].to_list() == [pd.Timestamp("2020-01-01")]
+
+        # Ignore time columns till this is solved:
+        # Reported in https://github.com/geopandas/pyogrio/issues/615
+        # assert "time_col" in df.columns
+        # assert is_object_dtype(df["time_col"].dtype)
+        # assert df["time_col"].to_list() == [time(12, 0, 0)]
+
+        assert "datetime_col" in df.columns
+        assert is_datetime64_dtype(df["datetime_col"].dtype)
+        assert df["datetime_col"].to_list() == [pd.Timestamp("2020-01-01T12:00:00")]
+
+        assert "list_int_col" in df.columns
+        assert is_object_dtype(df["list_int_col"].dtype)
+        assert df["list_int_col"][0].tolist() == [1, 2, 3]
+
+        assert "list_str_col" in df.columns
+        assert is_object_dtype(df["list_str_col"].dtype)
+        assert df["list_str_col"][0].tolist() == ["a", "b", "c"]
+
+        if not ignore_mixed_list_col:
+            assert "list_mixed_col" in df.columns
+            assert is_object_dtype(df["list_mixed_col"].dtype)
+            assert df["list_mixed_col"][0] == [1, "a", None, True]
+
+    # Read and validate result of reading
+    read_gdf = read_dataframe(many_data_types_geojson_file, use_arrow=use_arrow)
+    validate_result(read_gdf, use_arrow)
+
+    # Write the data read, read it back, and validate again
+    if use_arrow:
+        # Writing a column with mixed types in a list is not supported with Arrow.
+        ignore_mixed_list_col = True
+        read_gdf = read_gdf.drop(columns=["list_mixed_col"])
+    else:
+        ignore_mixed_list_col = False
+        request.node.add_marker(
+            pytest.mark.xfail(
+                reason="roundtripping list types fails with use_arrow=False"
+            )
+        )
+
+    tmp_file = tmp_path / "temp.geojson"
+    write_dataframe(read_gdf, tmp_file, use_arrow=use_arrow)
+
+    # Validate data written
+    read_back_gdf = read_dataframe(tmp_file, use_arrow=use_arrow)
+    validate_result(
+        read_back_gdf, use_arrow, ignore_mixed_list_col=ignore_mixed_list_col
+    )
 
 
 @pytest.mark.filterwarnings(
@@ -3200,7 +3332,7 @@ def test_write_geojson_rfc7946_coordinates(tmp_path, use_arrow):
     assert np.array_equal(gdf_in_appended.geometry.values, points + points_append)
 
 
-@pytest.mark.requires_arrow_api
+@pytest.mark.requires_arrow_write_api
 @pytest.mark.skipif(
     not GDAL_HAS_PARQUET_DRIVER, reason="Parquet driver is not available"
 )
