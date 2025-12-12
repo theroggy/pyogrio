@@ -791,19 +791,31 @@ def write_dataframe(
         # can contain datetime values with different offsets to strings.
         # Also pass a list of these columns on to GDAL so it can still treat them as
         # datetime columns when writing the dataset.
-        datetime_cols = []
+        column_metadata = []
         for name, dtype in df.dtypes.items():
             if dtype == "object":
                 # An object column with datetimes can contain multiple offsets.
-                if pd.api.types.infer_dtype(df[name]) == "datetime":
+                inferred_dtype = pd.api.types.infer_dtype(df[name])
+                if inferred_dtype == "datetime":
                     df[name] = df[name].astype("string")
-                    datetime_cols.append(name)
+                    column_metadata.append((name, "GDAL:OGR:type", "DateTime"))
+                elif inferred_dtype == "mixed":
+                    types = df[name].map(lambda x: type(x).__name__).unique()
+                    if all(t in ["list", "NoneType"] for t in types):
+                        try:
+                            pa.Table.from_pandas(df[[name]], preserve_index=False)
+                        except (pa.ArrowInvalid, pa.ArrowTypeError):
+                            df[name] = df[name].astype("string")
+                            # column_metadata.append((name, "GDAL:OGR:type", "String"))
+                            column_metadata.append(
+                               (name, "GDAL:OGR:subtype", "OFSTJSON")
+                            )
 
             elif isinstance(dtype, pd.DatetimeTZDtype) and str(dtype.tz) != "UTC":
                 # A pd.datetime64 column with a time zone different than UTC can contain
                 # data with different offsets because of summer/winter time.
                 df[name] = df[name].astype("string")
-                datetime_cols.append(name)
+                column_metadata.append((name, "GDAL:OGR:type", "DateTime"))
 
         table = pa.Table.from_pandas(df, preserve_index=False)
 
@@ -811,7 +823,8 @@ def write_dataframe(
         table = _add_column_metadata(
             table,
             column_metadata={
-                col: {"GDAL:OGR:type": "DateTime"} for col in datetime_cols
+                col: {metadata_key: metadata_value}
+                for col, metadata_key, metadata_value in column_metadata
             },
         )
 

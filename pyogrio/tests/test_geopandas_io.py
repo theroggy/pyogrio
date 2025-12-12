@@ -627,8 +627,9 @@ def test_roundtrip_many_data_types_geojson_file(
     # Write the data read, read it back, and validate again
     if use_arrow:
         # Writing a column with mixed types in a list is not supported with Arrow.
-        ignore_mixed_list_col = True
-        read_gdf = read_gdf.drop(columns=["list_mixed_col"])
+        # ignore_mixed_list_col = True
+        # read_gdf = read_gdf.drop(columns=["list_mixed_col"])
+        ignore_mixed_list_col = False
     else:
         ignore_mixed_list_col = False
         request.node.add_marker(
