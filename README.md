@@ -1,3 +1,8 @@
+[![pypi](https://img.shields.io/pypi/v/pyogrio.svg)](https://pypi.python.org/pypi/pyogrio/)
+[![Conda version](https://anaconda.org/conda-forge/pyogrio/badges/version.svg)](https://anaconda.org/conda-forge/pyogrio)
+[![Actions Status](https://github.com/geopandas/pyogrio/actions/workflows/tests-conda.yml/badge.svg?branch=main)](https://github.com/geopandas/pyogrio/actions?branch=main)
+[![Powered by NumFOCUS](https://img.shields.io/badge/powered%20by-NumFOCUS-orange.svg?style=flat&colorA=E1523D&colorB=007D8A)](https://numfocus.org)
+
 # pyogrio - bulk-oriented spatial vector file I/O using GDAL/OGR
 
 Pyogrio provides fast, bulk-oriented read and write access to 
@@ -26,7 +31,7 @@ Read the documentation for more information:
 
 ## Requirements
 
-Supports Python 3.9 - 3.13 and GDAL 3.4.x - 3.9.x.
+Supports Python 3.10 - 3.14 and GDAL 3.6.x - 3.11.x.
 
 Reading to GeoDataFrames requires `geopandas>=0.12` with `shapely>=2`.
 

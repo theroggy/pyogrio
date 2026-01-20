@@ -22,8 +22,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2019]
-        python: ["3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest, macos-latest, windows-2022]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         env: ["latest"]
         include:
           # environment with lower versions of optional dependencies
@@ -33,21 +33,17 @@ jobs:
               geopandas=0.12
           # minimal environment without optional dependencies
           - os: "ubuntu-latest"
-            python: "3.9"
-            env: "minimal"
-          # environment for older Windows libgdal to make sure gdal_i.lib is
-          # properly detected
-          - os: "windows-2019"
             python: "3.10"
-            env: "libgdal3.5.1"
+            env: "minimal"
           # environment with nightly wheels
           - os: "ubuntu-latest"
             python: "3.11"
             env: "nightly-deps"
+            pandas_future_infer_string: "1"
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Conda environment with Micromamba
         uses: mamba-org/setup-micromamba@v2
@@ -68,5 +64,7 @@ jobs:
         run: pip install -e .
 
       - name: Test
+        env:
+          PANDAS_FUTURE_INFER_STRING: ${{ matrix.pandas_future_infer_string || '0' }}
         run: |
           pytest -v --color=yes -r s pyogrio/tests
