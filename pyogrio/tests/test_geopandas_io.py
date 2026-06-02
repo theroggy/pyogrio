@@ -566,8 +566,9 @@ def test_read_list_nested_struct_parquet_file(
 
 
 @pytest.mark.requires_arrow_write_api
+@pytest.mark.parametrize("ext", [".geojson", ".gpkg"])
 def test_roundtrip_many_data_types_geojson_file(
-    request, tmp_path, many_data_types_geojson_file, use_arrow
+    request, tmp_path, many_data_types_geojson_file, ext, use_arrow
 ):
     """Test roundtripping a GeoJSON file containing many data types."""
 
@@ -606,36 +607,52 @@ def test_roundtrip_many_data_types_geojson_file(
             # Before GDAL 3.12, time columns were not read using arrow. Was fixed in
             # https://github.com/OSGeo/gdal/commit/f23cfbdbcc5eb0260a6a62e85211580b908be794
             assert "time_col" in df.columns
-            assert is_object_dtype(df["time_col"].dtype)
-            assert df["time_col"].to_list() == [time(12, 0, 0)]
+            if after_write and ext == ".gpkg":
+                # When writing to GPKG, time columns are serialized as strings, so read
+                # back as string.
+                assert is_string_dtype(df["time_col"].dtype)
+                assert df["time_col"].to_list() == ["12:00:00"]
+            else:
+                assert is_object_dtype(df["time_col"].dtype)
+                assert df["time_col"].to_list() == [time(12, 0, 0)]
 
         assert "datetime_col" in df.columns
         assert is_datetime64_dtype(df["datetime_col"].dtype)
         assert df["datetime_col"].to_list() == [pd.Timestamp("2020-01-01T12:00:00")]
 
         assert "list_int_col" in df.columns
-        assert is_object_dtype(df["list_int_col"].dtype)
-        assert df["list_int_col"][0].tolist() == [1, 2, 3]
+        if after_write and not use_arrow and ext == ".gpkg":
+            # When writing to GPKG, list columns are saved serialized as strings.
+            assert is_string_dtype(df["list_int_col"].dtype)
+            assert df["list_int_col"][0] == "[1, 2, 3]"
+        else:
+            assert is_object_dtype(df["list_int_col"].dtype)
+            assert df["list_int_col"][0].tolist() == [1, 2, 3]
 
         assert "list_str_col" in df.columns
-        assert is_object_dtype(df["list_str_col"].dtype)
-        assert df["list_str_col"][0].tolist() == ["a", "b", "c"]
+        if after_write and not use_arrow and ext == ".gpkg":
+            # When writing to GPKG, list columns are saved serialized as strings.
+            assert is_string_dtype(df["list_str_col"].dtype)
+            assert df["list_str_col"][0] == '["a", "b", "c"]'
+        else:
+            assert is_object_dtype(df["list_str_col"].dtype)
+            assert df["list_str_col"][0].tolist() == ["a", "b", "c"]
 
         assert "list_mixed_col" in df.columns
-        if after_write:
-            # After writing, mixed types in a list are always serialized as strings.
+        if after_write and ext == ".gpkg":
+            # After writing to GPKG, mixed types in a list are serialized as strings.
             assert is_string_dtype(df["list_mixed_col"].dtype)
-            assert df["list_mixed_col"][0] == "[1, 'a', None, True]"
+            assert df["list_mixed_col"][0] == '[1, "a", null, true]'
         else:
             assert is_object_dtype(df["list_mixed_col"].dtype)
-            assert df["list_mixed_col"][0] == [1, "a", None, True]
+            assert df["list_mixed_col"][0].tolist() == [1, "a", None, True]
 
     # Read and validate result of reading
     read_gdf = read_dataframe(many_data_types_geojson_file, use_arrow=use_arrow)
     validate_result(read_gdf, use_arrow, after_write=False)
 
     # Write the data read, read it back, and validate again
-    tmp_file = tmp_path / "written.geojson"
+    tmp_file = tmp_path / f"written{ext}"
     write_dataframe(read_gdf, tmp_file, use_arrow=use_arrow)
 
     # Validate data written

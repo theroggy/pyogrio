@@ -457,6 +457,7 @@ def read_dataframe(
                 if dtype == "string":
                     try:
                         df[c] = df[c].map(json.loads, na_action="ignore")
+                        df[c] = df[c].map(np.asarray, na_action="ignore")
                     except Exception:
                         warnings.warn(
                             f"Could not parse column '{c}' as JSON; leaving as string",
@@ -511,6 +512,7 @@ def read_dataframe(
             if dtype == "string":
                 try:
                     df[c] = df[c].map(json.loads, na_action="ignore")
+                    df[c] = df[c].map(np.asarray, na_action="ignore")
                 except Exception:
                     warnings.warn(
                         f"Could not parse column '{c}' as JSON; leaving as string",
@@ -813,7 +815,13 @@ def write_dataframe(
                     try:
                         _ = pa.Schema.from_pandas(df[[name]])
                     except pa.ArrowInvalid:
-                        df[name] = df[name].astype("string")
+                        if inferred_dtype == "mixed" and pd.api.types.is_list_like(
+                            df[name]
+                        ):
+                            df[name] = df[name].map(list)
+                            df[name] = df[name].map(json.dumps)
+                        else:
+                            df[name] = df[name].astype("string")
 
             elif isinstance(dtype, pd.DatetimeTZDtype) and str(dtype.tz) != "UTC":
                 # A pd.datetime64 column with a time zone different than UTC can contain
