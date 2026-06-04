@@ -59,7 +59,7 @@ FIELD_TYPES = [
     None,              # OFTWideStringList, deprecated, not supported
     "object",          # OFTBinary, Raw Binary data
     "datetime64[D]",   # OFTDate, Date
-    None,              # OFTTime, Time, NOTE: not directly supported in numpy
+    "object",          # OFTTime, Time, NOTE: not directly supported in numpy
     "datetime64[ms]",  # OFTDateTime, Date and Time
     "int64",           # OFTInteger64, Single 64bit integer
     "list(int64)"      # OFTInteger64List, List of 64bit integers
@@ -1030,9 +1030,9 @@ cdef process_fields(
     cdef int success
     cdef int field_index
     cdef int ret_length
-    cdef int *ints_c
-    cdef GIntBig *int64s_c
-    cdef double *doubles_c
+    cdef const int *ints_c
+    cdef const GIntBig *int64s_c
+    cdef const double *doubles_c
     cdef char **strings_c
     cdef GByte *bin_value
     cdef int year = 0
@@ -1087,8 +1087,7 @@ cdef process_fields(
             bin_value = OGR_F_GetFieldAsBinary(ogr_feature, field_index, &ret_length)
             data[i] = bin_value[:ret_length]
 
-        elif field_type == OFTDateTime or field_type == OFTDate:
-
+        elif field_type in (OFTDateTime, OFTDate, OFTTime):
             if field_type == OFTDateTime and datetime_as_string:
                 # defer datetime parsing to user/ pandas layer
                 IF CTE_GDAL_VERSION >= (3, 7, 0):
@@ -1129,6 +1128,9 @@ cdef process_fields(
                     data[i] = datetime.datetime(
                         year, month, day, hour, minute, second, microsecond
                     ).isoformat()
+
+                elif field_type == OFTTime:
+                    data[i] = datetime.time(hour, minute, second, microsecond)
 
         elif field_type == OFTIntegerList:
             # According to GDAL doc, this can return NULL for an empty list, which is a
@@ -2917,9 +2919,23 @@ def ogr_write(
                         OGR_Fld_Destroy(ogr_fielddef)
                         ogr_fielddef = NULL
 
-        # Create the features
+        # Get the field indexes for the fields we need to write to, as they might be
+        # different than the order they were created, e.g. when using the KML driver.
         ogr_featuredef = OGR_L_GetLayerDefn(ogr_layer)
 
+        field_indexes = []
+        if OGR_FD_GetFieldCount(ogr_featuredef) == num_fields:
+            field_indexes = list(range(num_fields))
+        else:
+            for i in range(num_fields):
+                index = OGR_FD_GetFieldIndex(ogr_featuredef, fields[i].encode(encoding))
+                if index < 0:
+                    raise FieldError(
+                        f"Could not find field index for field '{fields[i]}'"
+                    )
+                field_indexes.append(index)
+
+        # Create the features
         supports_transactions = OGR_L_TestCapability(ogr_layer, OLCTransactions)
         if supports_transactions:
             start_transaction(ogr_dataset, 0)
@@ -2987,17 +3003,18 @@ def ogr_write(
             for field_idx in range(num_fields):
                 field_value = field_data[field_idx][i]
                 field_type = field_types[field_idx][0]
+                field_index = field_indexes[field_idx]
 
                 mask = field_mask[field_idx]
                 if mask is not None and mask[i]:
-                    OGR_F_SetFieldNull(ogr_feature, field_idx)
+                    OGR_F_SetFieldNull(ogr_feature, field_index)
 
                 elif field_type == OFTString:
                     if (
                         field_value is None
                         or (isinstance(field_value, float) and isnan(field_value))
                     ):
-                        OGR_F_SetFieldNull(ogr_feature, field_idx)
+                        OGR_F_SetFieldNull(ogr_feature, field_index)
 
                     else:
                         if not isinstance(field_value, str):
@@ -3005,7 +3022,7 @@ def ogr_write(
 
                         try:
                             value_b = field_value.encode(encoding)
-                            OGR_F_SetFieldString(ogr_feature, field_idx, value_b)
+                            OGR_F_SetFieldString(ogr_feature, field_index, value_b)
 
                         except AttributeError:
                             raise ValueError(
@@ -3017,25 +3034,25 @@ def ogr_write(
                             raise
 
                 elif field_type == OFTInteger:
-                    OGR_F_SetFieldInteger(ogr_feature, field_idx, field_value)
+                    OGR_F_SetFieldInteger(ogr_feature, field_index, field_value)
 
                 elif field_type == OFTInteger64:
-                    OGR_F_SetFieldInteger64(ogr_feature, field_idx, field_value)
+                    OGR_F_SetFieldInteger64(ogr_feature, field_index, field_value)
 
                 elif field_type == OFTReal:
                     if nan_as_null and isnan(field_value):
-                        OGR_F_SetFieldNull(ogr_feature, field_idx)
+                        OGR_F_SetFieldNull(ogr_feature, field_index)
                     else:
-                        OGR_F_SetFieldDouble(ogr_feature, field_idx, field_value)
+                        OGR_F_SetFieldDouble(ogr_feature, field_index, field_value)
 
                 elif field_type == OFTDate:
                     if np.isnat(field_value):
-                        OGR_F_SetFieldNull(ogr_feature, field_idx)
+                        OGR_F_SetFieldNull(ogr_feature, field_index)
                     else:
                         datetime = field_value.item()
                         OGR_F_SetFieldDateTimeEx(
                             ogr_feature,
-                            field_idx,
+                            field_index,
                             datetime.year,
                             datetime.month,
                             datetime.day,
@@ -3047,7 +3064,7 @@ def ogr_write(
 
                 elif field_type == OFTDateTime:
                     if np.isnat(field_value):
-                        OGR_F_SetFieldNull(ogr_feature, field_idx)
+                        OGR_F_SetFieldNull(ogr_feature, field_index)
                     else:
                         datetime = field_value.astype("datetime64[ms]").item()
                         tz_array = gdal_tz_offsets.get(fields[field_idx], None)
@@ -3057,7 +3074,7 @@ def ogr_write(
                             gdal_tz = tz_array[i]
                         OGR_F_SetFieldDateTimeEx(
                             ogr_feature,
-                            field_idx,
+                            field_index,
                             datetime.year,
                             datetime.month,
                             datetime.day,
