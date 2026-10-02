@@ -805,7 +805,7 @@ def write_dataframe(
             if geometry_column is not None and name == geometry_column:
                 continue
 
-            width = column_widths.get(name, None)
+            width = column_widths.get(name, None) if column_widths is not None else None
 
             if isinstance(dtype, pd.StringDtype):
                 if width is not None and width > 0:
