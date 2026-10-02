@@ -3035,7 +3035,7 @@ def ogr_write(
 
                     if field_width:
                         OGR_Fld_SetWidth(ogr_fielddef, field_width)
-                    
+
                         # Precision should (only) be set for OFTReal fields
                         if field_ogr_type in (OFTReal, OFTRealList):
                             if field_precision is not None:
