@@ -2,6 +2,7 @@
 
 import warnings
 from io import BytesIO
+from numbers import Integral
 from pathlib import Path
 
 from pyogrio._compat import HAS_ARROW_WRITE_API, HAS_PYARROW
@@ -34,6 +35,28 @@ DRIVERS_NO_MIXED_SINGLE_MULTI = {
 DRIVERS_NO_MIXED_DIMENSIONS = {
     "FlatGeobuf",
 }
+
+
+def _validate_field_width_values(field_widths, field_precisions, fields):
+    for value_type, values in (
+        ("width", field_widths),
+        ("precision", field_precisions),
+    ):
+        if values is None:
+            continue
+
+        for index, value in enumerate(values):
+            if value is None:
+                continue
+
+            field_name = (
+                fields[index] if fields is not None and index < len(fields) else index
+            )
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
+                raise ValueError(
+                    f"Field {field_name!r} {value_type} must be a non-negative "
+                    f"integer, not {value!r}"
+                )
 
 
 def read(
@@ -642,10 +665,10 @@ def write(
         a mask array
     field_widths : list-like or None, optional (default: None)
         contains the widths of the fields in the same order as fields, or None if
-        field widths are not specified.
+        field widths are not specified. Values must be non-negative integers.
     field_precisions : list-like or None, optional (default: None)
         contains the precisions of the fields in the same order as fields, or None if
-        field precisions are not specified.
+        field precisions are not specified. Values must be non-negative integers.
     layer : str, optional (default: None)
         layer name to create.  If writing to memory and layer name is not
         provided, it layer name will be set to a UUID4 value.
@@ -717,6 +740,11 @@ def write(
     kwargs.pop("ogr_types", None)
     kwargs.pop("ogr_subtypes", None)
 
+    fields = list(fields) if fields is not None else None
+    field_widths = list(field_widths) if field_widths is not None else None
+    field_precisions = list(field_precisions) if field_precisions is not None else None
+    _validate_field_width_values(field_widths, field_precisions, fields)
+
     path, driver = _get_write_path_driver(path, driver, append=append)
 
     dataset_metadata, layer_metadata = _validate_metadata(
@@ -742,7 +770,6 @@ def write(
         driver, dataset_options, layer_options, kwargs
     )
 
-    field_precisions = list(field_precisions) if field_precisions is not None else None
     ogr_write(
         path,
         layer=layer,
@@ -751,8 +778,8 @@ def write(
         geometry_type=geometry_type,
         field_data=list(field_data) if field_data is not None else None,
         field_mask=list(field_mask) if field_mask is not None else None,
-        fields=list(fields) if fields is not None else None,
-        field_widths=list(field_widths) if field_widths is not None else None,
+        fields=fields,
+        field_widths=field_widths,
         field_precisions=field_precisions,
         crs=crs,
         encoding=encoding,

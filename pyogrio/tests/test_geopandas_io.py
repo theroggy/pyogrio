@@ -34,7 +34,12 @@ from pyogrio._compat import (
     PANDAS_GE_30,
     SHAPELY_GE_21,
 )
-from pyogrio.errors import DataLayerError, DataSourceError, FeatureError, GeometryError
+from pyogrio.errors import (
+    DataLayerError,
+    DataSourceError,
+    FeatureError,
+    GeometryError,
+)
 from pyogrio.geopandas import PANDAS_GE_20, read_dataframe, write_dataframe
 from pyogrio.raw import (
     DRIVERS_NO_MIXED_DIMENSIONS,
@@ -2051,7 +2056,7 @@ def test_write_dataframe_column_widths(tmp_path, naturalearth_lowres, ext, use_a
 
     column_widths = {
         "pop_est": 14,
-        "continent": 100,
+        "continent": np.int64(100),
         "name": 100,
         "iso_a3": 100,
         "gdp_md_est": (14, 2),
@@ -2091,6 +2096,110 @@ def test_write_dataframe_column_widths(tmp_path, naturalearth_lowres, ext, use_a
     # Check data
     result_gdf = read_dataframe(output_path)
     assert_geodataframe_equal(result_gdf, input_gdf)
+
+
+@pytest.mark.parametrize(
+    "column_widths, error_message, error_message_arrow",
+    [
+        pytest.param(
+            {"float_column": 14},
+            "requires a precision if field width is set",
+            "With use_arrow, width is only supported for string columns",
+            id="real-without-precision",
+        ),
+        pytest.param(
+            {"string_column": (100, 2)},
+            "should not have a precision > 0",
+            "With use_arrow, width is only supported for string columns",
+            id="precision-on-string",
+        ),
+        pytest.param(
+            {"missing_column": 14, "another_missing_column": 10},
+            "(?=.*missing_column)(?=.*another_missing_column)",
+            "(?=.*missing_column)(?=.*another_missing_column)",
+            id="unknown-column",
+        ),
+        pytest.param(
+            {"string_column": 10.5},
+            "must be an integer or a 2-item",
+            "must be an integer or a 2-item",
+            id="float-width",
+        ),
+        pytest.param(
+            {"string_column": True},
+            "must be a non-negative integer",
+            "must be a non-negative integer",
+            id="boolean-width",
+        ),
+        pytest.param(
+            {"float_column": (10,)},
+            re.escape("2-item (width, precision) tuple"),
+            re.escape("2-item (width, precision) tuple"),
+            id="malformed-precision-tuple",
+        ),
+        pytest.param(
+            {"float_column": (10, 2.5)},
+            "must be a non-negative integer",
+            "With use_arrow, width is only supported for string columns",
+            id="float-precision",
+        ),
+        pytest.param(
+            {"string_column": -1},
+            "must be a non-negative integer",
+            "must be a non-negative integer",
+            id="negative-width",
+        ),
+        pytest.param(
+            {"float_column": (10, -1)},
+            "must be a non-negative integer",
+            "With use_arrow, width is only supported for string columns",
+            id="negative-precision",
+        ),
+        pytest.param(
+            {"integer_column": 14},
+            None,
+            "With use_arrow, width is only supported for string columns",
+            id="integer-width",
+        ),
+    ],
+)
+@pytest.mark.requires_arrow_write_api
+def test_write_dataframe_column_widths_errors(
+    tmp_path, use_arrow, column_widths, error_message, error_message_arrow
+):
+    df = pd.DataFrame(
+        {
+            "float_column": [1.0],
+            "string_column": ["Europe"],
+            "integer_column": np.array([1], dtype=np.int64),
+        }
+    )
+    output_path = tmp_path / "test.gpkg"
+
+    error_message = error_message_arrow if use_arrow else error_message
+    if error_message is not None:
+        with pytest.raises(ValueError, match=error_message):
+            write_dataframe(
+                df, output_path, column_widths=column_widths, use_arrow=use_arrow
+            )
+    else:
+        write_dataframe(
+            df, output_path, column_widths=column_widths, use_arrow=use_arrow
+        )
+
+
+@pytest.mark.requires_arrow_write_api
+def test_write_dataframe_column_widths_zero_is_ignored(
+    tmp_path, naturalearth_lowres, use_arrow
+):
+    input_gdf = read_dataframe(naturalearth_lowres)
+
+    write_dataframe(
+        input_gdf,
+        tmp_path / "test.gpkg",
+        column_widths={"gdp_md_est": 0},
+        use_arrow=use_arrow,
+    )
 
 
 @pytest.mark.filterwarnings("ignore:.*No SRS set on layer.*")

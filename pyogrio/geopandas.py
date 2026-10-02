@@ -22,6 +22,7 @@ from pyogrio.raw import (
     DRIVERS_NO_MIXED_DIMENSIONS,
     DRIVERS_NO_MIXED_SINGLE_MULTI,
     _get_write_path_driver,
+    _validate_field_width_values,
     read,
     read_arrow,
     write,
@@ -542,7 +543,6 @@ def write_dataframe(
     dataset_options=None,
     layer_options=None,
     column_widths=None,
-    column_precisions=None,
     **kwargs,
 ):
     """Write GeoPandas GeoDataFrame to an OGR file format.
@@ -683,6 +683,25 @@ def write_dataframe(
         geometry_column = None
         geometry = None
 
+    if column_widths is not None:
+        unknown_columns = [name for name in column_widths if name not in df.columns]
+        if unknown_columns:
+            raise ValueError(
+                f"column_widths contains columns not found in 'df': {unknown_columns}"
+            )
+
+        for name, width in column_widths.items():
+            if isinstance(width, tuple):
+                is_valid_width = len(width) == 2
+            else:
+                is_valid_width = isinstance(width, (int, np.integer))
+
+            if not is_valid_width:
+                raise ValueError(
+                    f"column_widths for column '{name}' must be an integer or a "
+                    f"2-item (width, precision) tuple, not {width}"
+                )
+
     # Determine geometry_type and/or promote_to_multi
     if geometry_column is not None:
         geometry_types_all = geometry.geom_type
@@ -762,6 +781,19 @@ def write_dataframe(
 
         from pyogrio.raw import write_arrow
 
+        if column_widths is not None:
+            arrow_fields = [name for name in df.columns if name != geometry_column]
+            arrow_widths = []
+            for name in arrow_fields:
+                width = column_widths.get(name)
+                if isinstance(width, tuple):
+                    raise ValueError(
+                        "With use_arrow, width is only supported for string columns, "
+                        f"so tuple widths are not supported (column: '{name}')"
+                    )
+                arrow_widths.append(width)
+            _validate_field_width_values(arrow_widths, None, arrow_fields)
+
         df = df.copy(deep=False)
 
         if geometry_column is not None:
@@ -838,12 +870,10 @@ def write_dataframe(
                 df[name] = df[name].astype("string")
                 datetime_cols.append(name)
 
-            if width is not None:
-                warnings.warn(
-                    f"There is a column width specified for column '{name}', but with "
-                    "use_arrow this is only applied for string columns.",
-                    UserWarning,
-                    stacklevel=2,
+            if width is not None and width > 0:
+                raise ValueError(
+                    "With use_arrow, width is only supported for string columns, "
+                    f"not for column '{name}'"
                 )
 
         table = pa.Table.from_pandas(df, preserve_index=False)

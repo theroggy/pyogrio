@@ -470,6 +470,44 @@ def test_write_shp(tmp_path, naturalearth_lowres, encoding):
         assert result_encoding == expected_encoding
 
 
+@pytest.mark.parametrize(
+    "field_widths, field_precisions",
+    [
+        ([10.5], None),
+        ([True], None),
+        ([np.bool_(True)], None),
+        ([-1], None),
+        (None, [2.5]),
+        (None, [True]),
+        (None, [-1]),
+    ],
+)
+def test_write_invalid_field_width_values(tmp_path, field_widths, field_precisions):
+    with pytest.raises(ValueError, match="non-negative integer"):
+        write(
+            tmp_path / "unused.gpkg",
+            geometry=None,
+            field_data=None,
+            fields=["field"],
+            field_widths=field_widths,
+            field_precisions=field_precisions,
+        )
+
+
+def test_write_numpy_integer_field_width(tmp_path):
+    filename = tmp_path / "test.gpkg"
+    write(
+        filename,
+        geometry=None,
+        field_data=[np.array([1], dtype="int32")],
+        fields=["field"],
+        field_widths=[np.int64(10)],
+        driver="GPKG",
+    )
+
+    assert filename.exists()
+
+
 def test_write_gpkg(tmp_path, naturalearth_lowres):
     meta, _, geometry, field_data = read(naturalearth_lowres)
     meta.update({"geometry_type": "MultiPolygon"})

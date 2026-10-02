@@ -3035,12 +3035,28 @@ def ogr_write(
 
                     if field_width:
                         OGR_Fld_SetWidth(ogr_fielddef, field_width)
-
-                    if field_precision is not None:
-                        OGR_Fld_SetPrecision(ogr_fielddef, field_precision)
+                    
+                        # Precision should (only) be set for OFTReal fields
+                        if field_ogr_type in (OFTReal, OFTRealList):
+                            if field_precision is not None:
+                                OGR_Fld_SetPrecision(ogr_fielddef, field_precision)
+                            else:
+                                raise ValueError(
+                                    f"Field '{fields[i]}' of type "
+                                    f"{FIELD_TYPE_NAMES[field_ogr_type]} "
+                                    "requires a precision if field width is set"
+                                ) from None
+                        elif field_precision is not None and field_precision > 0:
+                            raise ValueError(
+                                f"Field '{fields[i]}' of type "
+                                f"{FIELD_TYPE_NAMES[field_ogr_type]} should not have "
+                                "a precision > 0"
+                            ) from None
 
                     check_int(OGR_L_CreateField(ogr_layer, ogr_fielddef, 1))
 
+                except ValueError as ex:
+                    raise
                 except Exception:
                     raise FieldError(
                         f"Error adding field '{fields[i]}' to layer"
