@@ -807,6 +807,10 @@ def write_dataframe(
 
             width = column_widths.get(name, None)
 
+            if isinstance(dtype, pd.StringDtype):
+                if width is not None and width > 0:
+                    string_widths[name] = width
+                continue
             if dtype == "object":
                 inferred_dtype = pd.api.types.infer_dtype(df[name])
                 if inferred_dtype == "string":

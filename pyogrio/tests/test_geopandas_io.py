@@ -2048,25 +2048,18 @@ def test_write_dataframe(tmp_path, naturalearth_lowres, ext, use_arrow):
 @pytest.mark.requires_arrow_write_api
 def test_write_dataframe_column_widths(tmp_path, naturalearth_lowres, ext, use_arrow):
     input_gdf = read_dataframe(naturalearth_lowres)
-    input_info = read_info(naturalearth_lowres)
 
-    column_widths = {}
-    for field, dtype, width, precision in zip(
-        input_info["fields"],
-        input_info["dtypes"],
-        input_info["field_widths"],
-        input_info["field_precisions"],
-        strict=True,
-    ):
-        if not use_arrow:
-            if precision is not None:
-                column_widths[field] = (width, precision)
-            else:
-                column_widths[field] = width
-        else:
-            # For use_arrow, column widths are only supported for string columns.
-            if dtype == "object" and width is not None and width > 0:
-                column_widths[field] = width
+    column_widths = {
+        "pop_est": 14,
+        "continent": 100,
+        "name": 100,
+        "iso_a3": 100,
+        "gdp_md_est": (14, 2),
+    }
+    if use_arrow:
+        # For use_arrow, only string columns are supported for column widths.
+        del column_widths["pop_est"]
+        del column_widths["gdp_md_est"]
 
     output_path = tmp_path / f"test{ext}"
     write_dataframe(
@@ -2079,20 +2072,18 @@ def test_write_dataframe_column_widths(tmp_path, naturalearth_lowres, ext, use_a
     # Check widths and precisions
     result_info = read_info(output_path)
 
-    expected_widths = input_info["field_widths"].tolist()
-    expected_precisions = input_info["field_precisions"].tolist()
+    expected_widths = [14, 100, 100, 100, 14]
+    expected_precisions = [0, 0, 0, 0, 2]
     if ext == ".gpkg":
-        if use_arrow:
-            # With arrow, is seems that even string widths are not preserved.
-            expected_widths = [0] * len(expected_widths)
-        else:
-            expected_widths[0] = expected_widths[4] = 0
-        # Precision is not applied in GeoPackage files.
-        expected_precisions = [0] * len(expected_precisions)
+        # In GeoPackage, numeric column widths and precisions are not applied.
+        expected_widths[0] = expected_widths[4] = 0
+        expected_precisions[4] = 0
     elif use_arrow:
         # For Arrow, only string columns are overridden, other types retain default
         # widths and precisions.
         expected_widths[0] = 18
+        expected_widths[4] = 24
+        expected_precisions[4] = 15
 
     assert result_info["field_widths"].tolist() == expected_widths
     assert result_info["field_precisions"].tolist() == expected_precisions
