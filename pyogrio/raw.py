@@ -598,6 +598,8 @@ def write(
     field_data,
     fields,
     field_mask=None,
+    field_widths=None,
+    field_precisions=None,
     layer=None,
     driver=None,
     # derived from meta if roundtrip
@@ -634,6 +636,12 @@ def write(
         contains mask arrays indicating null values of the field at the same
         position in the outer list, or None to indicate field does not have
         a mask array
+    field_widths : list-like or None, optional (default: None)
+        contains the widths of the fields at the same order as fields, or None if
+        field widths are not specified.
+    field_precisions : list-like or None, optional (default: None)
+        contains the precisions of the fields at the same order as fields, or None if
+        field precisions are not specified.
     layer : str, optional (default: None)
         layer name to create.  If writing to memory and layer name is not
         provided, it layer name will be set to a UUID4 value.
@@ -730,6 +738,7 @@ def write(
         driver, dataset_options, layer_options, kwargs
     )
 
+    field_precisions = list(field_precisions) if field_precisions is not None else None
     ogr_write(
         path,
         layer=layer,
@@ -739,6 +748,8 @@ def write(
         field_data=list(field_data) if field_data is not None else None,
         field_mask=list(field_mask) if field_mask is not None else None,
         fields=list(fields) if fields is not None else None,
+        field_widths=list(field_widths) if field_widths is not None else None,
+        field_precisions=field_precisions,
         crs=crs,
         encoding=encoding,
         promote_to_multi=promote_to_multi,

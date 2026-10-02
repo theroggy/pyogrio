@@ -541,6 +541,8 @@ def write_dataframe(
     metadata=None,
     dataset_options=None,
     layer_options=None,
+    column_widths=None,
+    column_precisions=None,
     **kwargs,
 ):
     """Write GeoPandas GeoDataFrame to an OGR file format.
@@ -625,6 +627,11 @@ def write_dataframe(
     layer_options : dict, optional
         Layer creation options (format specific) passed to OGR. Specify as
         a key-value dictionary.
+    column_widths : dict or None, optional (default: None)
+        Contains the widths of the columns keyed by column name, or None if
+        column widths are not specified. For floating point columns, the value
+        should be a tuple of (width, precision). For all other column types,
+        the value should be an integer representing the width.
     **kwargs
         Additional driver-specific dataset or layer creation options passed
         to OGR. pyogrio will attempt to automatically pass those keywords
@@ -793,13 +800,19 @@ def write_dataframe(
         # Also pass a list of these columns on to GDAL so it can still treat them as
         # datetime columns when writing the dataset.
         datetime_cols = []
+        string_widths = {}
         for name, dtype in df.dtypes.items():
             if geometry_column is not None and name == geometry_column:
                 continue
+
+            width = column_widths.get(name, None)
+
             if dtype == "object":
                 inferred_dtype = pd.api.types.infer_dtype(df[name])
                 if inferred_dtype == "string":
                     # The column already contains strings, so no need to convert.
+                    if width is not None and width > 0:
+                        string_widths[name] = width
                     continue
                 elif inferred_dtype == "datetime":
                     # The arrow timestamp type doesn't support mixed time zone offsets,
@@ -821,6 +834,14 @@ def write_dataframe(
                 df[name] = df[name].astype("string")
                 datetime_cols.append(name)
 
+            if width is not None:
+                warnings.warn(
+                    f"There is a column width specified for column '{name}', but with "
+                    "use_arrow this is only applied for string columns.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
         table = pa.Table.from_pandas(df, preserve_index=False)
 
         # Add metadata to datetime columns so GDAL knows they are datetimes.
@@ -828,6 +849,15 @@ def write_dataframe(
             table,
             column_metadata={
                 col: {"GDAL:OGR:type": "DateTime"} for col in datetime_cols
+            },
+        )
+
+        # Add column width metadata to the table so GDAL knows the widths of the fields.
+        table = _add_column_metadata(
+            table,
+            column_metadata={
+                col: {"GDAL:OGR:width": str(width)}
+                for col, width in string_widths.items()
             },
         )
 
@@ -897,10 +927,26 @@ def write_dataframe(
     # TODO: may need to fill in pd.NA, etc
     field_data = []
     field_mask = []
+    field_widths = []
+    field_precisions = []
     # dict[str, np.array(int)] special case for dt-tz fields
     gdal_tz_offsets = {}
     for name in fields:
         col = df[name]
+
+        # Determine the column width and precision for the current field, if specified.
+        column_width = column_widths.get(name) if column_widths is not None else None
+        if column_width is not None:
+            if isinstance(column_width, tuple):
+                field_widths.append(column_width[0])
+                field_precisions.append(column_width[1])
+            else:
+                field_widths.append(column_width)
+                field_precisions.append(None)
+        else:
+            field_widths.append(None)
+            field_precisions.append(None)
+
         values = None
 
         if isinstance(col.dtype, pd.DatetimeTZDtype):
@@ -953,6 +999,8 @@ def write_dataframe(
         field_data=field_data,
         field_mask=field_mask,
         fields=fields,
+        field_widths=field_widths,
+        field_precisions=field_precisions,
         crs=crs,
         geometry_type=geometry_type,
         encoding=encoding,
