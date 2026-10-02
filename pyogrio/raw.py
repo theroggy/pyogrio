@@ -637,10 +637,10 @@ def write(
         position in the outer list, or None to indicate field does not have
         a mask array
     field_widths : list-like or None, optional (default: None)
-        contains the widths of the fields at the same order as fields, or None if
+        contains the widths of the fields in the same order as fields, or None if
         field widths are not specified.
     field_precisions : list-like or None, optional (default: None)
-        contains the precisions of the fields at the same order as fields, or None if
+        contains the precisions of the fields in the same order as fields, or None if
         field precisions are not specified.
     layer : str, optional (default: None)
         layer name to create.  If writing to memory and layer name is not

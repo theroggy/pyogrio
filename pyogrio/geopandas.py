@@ -628,10 +628,10 @@ def write_dataframe(
         Layer creation options (format specific) passed to OGR. Specify as
         a key-value dictionary.
     column_widths : dict or None, optional (default: None)
-        Contains the widths of the columns keyed by column name, or None if
-        column widths are not specified. For floating point columns, the value
-        should be a tuple of (width, precision). For all other column types,
-        the value should be an integer representing the width.
+        Passes the maximum width for each column listed to OGR. Actual support
+        depends on the driver. For floating point columns, the value should be
+        a tuple of (width, precision) instead of a single integer.
+        With `use_arrow`, only string columns are supported.
     **kwargs
         Additional driver-specific dataset or layer creation options passed
         to OGR. pyogrio will attempt to automatically pass those keywords
