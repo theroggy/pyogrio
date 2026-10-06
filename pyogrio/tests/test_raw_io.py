@@ -965,6 +965,13 @@ def test_read_write_data_types_numeric(tmp_path, ext):
 def test_read_write_data_types_string(
     tmp_path, field_data, expected, expected_widths, ext
 ):
+    """Test reading and writing string data types.
+
+    If the string data type has a fixed width, this width will be used to set the field
+    width in the output file.
+    This can be overruled by specifying a different field width using the `field_widths`
+    parameter.
+    """
     filename = tmp_path / f"test{ext}"
     geometry = np.array(
         [bytes.fromhex("010100000000000000000000000000000000000000")] * 2,
@@ -975,6 +982,40 @@ def test_read_write_data_types_string(
     result = read(filename)[3][0]
     assert result.tolist() == expected
     assert read_info(filename)["field_widths"].tolist() == [expected_widths[ext]]
+
+
+@pytest.mark.parametrize(
+    "field_data, field_widths, expected_width",
+    [
+        (np.array(["a", "bc"], dtype="U2"), None, 2),
+        (np.array(["a", "bc"], dtype="U2"), [5], 5),
+    ],
+)
+def test_read_write_data_types_string_explicit_width(
+    tmp_path, field_data, field_widths, expected_width
+):
+    """Test reading and writing string data types with explicit field widths.
+
+    If `field_widths` is specified, it will override the default width inferred from the
+    string data type.
+    """
+    filename = tmp_path / "test.shp"
+    geometry = np.array(
+        [bytes.fromhex("010100000000000000000000000000000000000000")] * 2,
+        dtype=object,
+    )
+    write(
+        filename,
+        geometry,
+        [field_data],
+        ["col"],
+        geometry_type="Point",
+        field_widths=field_widths,
+    )
+
+    result = read(filename)[3][0]
+    assert result.tolist() == field_data.tolist()
+    assert read_info(filename)["field_widths"].tolist() == [expected_width]
 
 
 def test_read_write_datetime(tmp_path):
