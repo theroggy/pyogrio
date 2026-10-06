@@ -3021,8 +3021,8 @@ def ogr_write(
 
         if layer_created:
             for i in range(num_fields):
-                field_ogr_type, field_subtype, _width, _precision = field_types[i]
-                field_width = field_widths[i] if field_widths is not None else None
+                field_ogr_type, field_subtype, width, _precision = field_types[i]
+                field_width = field_widths[i] if field_widths is not None else width
                 field_precision = field_precisions[i] if field_precisions is not None else None  # noqa: E501
 
                 name_b = fields[i].encode(encoding)

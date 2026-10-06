@@ -941,6 +941,42 @@ def test_read_write_data_types_numeric(tmp_path, ext):
         assert result.dtype == result_dtype
 
 
+@pytest.mark.parametrize(
+    "field_data, expected, expected_widths",
+    [
+        (
+            np.array(["a", "bc"], dtype="U2"),
+            ["a", "bc"],
+            {".shp": 2, ".gpkg": 2, ".fgb": 2, ".geojson": 0},
+        ),
+        (
+            np.array(["a", "bc"], dtype="U10"),
+            ["a", "bc"],
+            {".shp": 10, ".gpkg": 10, ".fgb": 10, ".geojson": 0},
+        ),
+        (
+            np.array([b"a", b"bc"], dtype="S2"),
+            ["b'a'", "b'bc'"],
+            {".shp": 80, ".gpkg": 0, ".fgb": 0, ".geojson": 0},
+        ),
+    ],
+)
+@pytest.mark.parametrize("ext", [".shp", ".gpkg", ".fgb", ".geojson"])
+def test_read_write_data_types_string(
+    tmp_path, field_data, expected, expected_widths, ext
+):
+    filename = tmp_path / f"test{ext}"
+    geometry = np.array(
+        [bytes.fromhex("010100000000000000000000000000000000000000")] * 2,
+        dtype=object,
+    )
+    write(filename, geometry, [field_data], ["col"], geometry_type="Point")
+
+    result = read(filename)[3][0]
+    assert result.tolist() == expected
+    assert read_info(filename)["field_widths"].tolist() == [expected_widths[ext]]
+
+
 def test_read_write_datetime(tmp_path):
     field_data = [
         np.array(["2005-02-01", "2005-02-02"], dtype="datetime64[D]"),
